@@ -1,5 +1,5 @@
-### DECIMER Workflow
-# Chemical Structure Segmentation and Prediction
+# DECIMER Workflow
+### Chemical Structure Segmentation and Prediction
 
 This script performs the segmentation of chemical structures from PDFs, predicts SMILES and confidence values, and generates a comprehensive analysis with visualizations.
 
