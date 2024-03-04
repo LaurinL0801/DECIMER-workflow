@@ -347,7 +347,9 @@ def create_output_csv(filepath: str) -> None:
     df.to_csv(out_csv_path)
 
 
-def concatenate_csv_files(parent_directory: str, output_file: str = "merged_output.csv") -> str:
+def concatenate_csv_files(
+    parent_directory: str, output_file: str = "merged_output.csv"
+) -> str:
     """Concatenate CSV files for all publications from subdirectories.
 
     This function creates a CSV file that is concatenated for all publications from the previously
@@ -407,7 +409,6 @@ def move_pdf(filepath: str) -> None:
     pdf_out = f"{file_stem}.pdf"
     output_path = os.path.join(output_dir, pdf_out)
     shutil.move(filepath, output_path)
-
 
 
 def split_good_bad(csv_path: str, value: float = 0.9) -> None:
