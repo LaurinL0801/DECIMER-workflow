@@ -10,11 +10,12 @@ This script performs the segmentation of chemical structures from PDFs, predicts
 - **Visualization**: Images are generated from the predicted SMILES, and a PDF report is created for each publication, showing segmented and predicted images or error messages.
 - **CSV Output**: CSV files are generated, categorizing segmented structures based on confidence values.
 
-## Requirements
-- Conda (https://docs.anaconda.com/free/miniconda/)
+
+
 
 ## Installation
 I recommend using a conda environment for installation.
+- Conda (https://docs.anaconda.com/free/miniconda/)
 
    ```
    git clone https://github.com/LaurinL0801/DECIMER-workflow
@@ -38,7 +39,7 @@ The segmented images, predicted images, and CSV files are stored in individual d
 
 ## Acknowledgements 
 
-This script usses the DECIMER library for image segmentation (https://github.com/Kohulan/DECIMER-Image-Segmentation) and SMILES prediction (https://github.com/Kohulan/DECIMER-Image_Transformer).
+This script uses the DECIMER library for image segmentation (https://github.com/Kohulan/DECIMER-Image-Segmentation) and SMILES prediction (https://github.com/Kohulan/DECIMER-Image_Transformer).
 
 ##License
 
