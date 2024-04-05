@@ -77,8 +77,6 @@ def get_filepath(args: argparse.Namespace) -> str:
     """
     publication = args.f
     return publication
-    publication = args.f
-    return publication
 
 
 def get_conf_value(args: argparse.Namespace) -> str:
@@ -257,14 +255,14 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
         for im in os.listdir(newdirpath):
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
-                smileswithconfidence = predict_SMILES_with_confidence(im_path)
-                smiles_characters = [item[0] for item in smileswithconfidence]
+                smiles_with_confidence = predict_SMILES_with_confidence(im_path)
+                smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
-                confidence_list = [item[1] for item in smileswithconfidence]
+                confidence_list = [item[1] for item in smiles_with_confidence]
                 avg_confidence = mean(confidence_list)
                 data = [[smiles], [avg_confidence]]
                 csv_path = f"{im_path[:-13]}predicted.csv"
-                with open(csv_path, "w") as csvfile:
+                with open(csv_path, "w",encoding="UTF-8") as csvfile:
                     csv_writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                     csv_writer.writerows(data)
                 mol = Chem.MolFromSmiles(smiles, sanitize=False)
@@ -274,30 +272,43 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                 except ValueError:
                     pass
 
-
-def create_output_csv(filepath: str) -> None:
-    """Concatenate CSV files from subdirectories and create an output CSV.
-
-    This function takes the path to a PDF file, loops through the affiliated directory with each subdirectory,
-    and extracts all previously created CSV files containing SMILES and confidence scores.
-    It then concatenates the data and creates an output CSV file.
+def get_doi_from_file(filepath: str) -> str:
+    """Extract DOI or filename from the given file path.
 
     Args:
-        filepath (str): Path to a PDF file with subdirectories containing segmented images.
+        filepath (str): Path to a file.
 
     Returns:
-        None
+        str: DOI if available, otherwise filename without extension.
 
     Example:
-        >>> create_output_csv('path/to/example.pdf')
+        >>> get_doi_from_file('path/to/example.pdf')
 
-        This will concatenate CSV files from subdirectories and create an output CSV file.
+        This will return the DOI extracted from the PDF file if available,
+        otherwise, it will return the filename without extension.
     """
     filename = Path(filepath).stem
     try:
         doi = get_doi(filepath)
     except IndexError:
         doi = filename
+    return doi
+
+def create_output_dictionary(filepath: str, doi: str) -> None:
+    """Create an output dictionary containing SMILES and confidence scores for each segmented image.
+
+    Args:
+        filepath (str): Path to a PDF file with subdirectories containing segmented images.
+        doi (str): DOI or filename of the PDF file.
+
+    Returns:
+        dict: Output dictionary with DOI/Filename as keys and image IDs, SMILES, and confidence scores as values.
+
+    Example:
+        >>> create_output_dictionary('path/to/example.pdf', 'example_doi')
+
+        This will create an output dictionary containing SMILES and confidence scores for each segmented image.
+    """
     output_dict = {doi: {}}
     dirpath = filepath[:-4]
     for root, dirs, files in os.walk(dirpath):
@@ -310,7 +321,7 @@ def create_output_csv(filepath: str) -> None:
             for subfiles in newdir_list:
                 newfilepath = os.path.join(newdirpath, subfiles)
                 if newfilepath.endswith(".csv"):
-                    with open(newfilepath, "r") as csvfile:
+                    with open(newfilepath, "r",encoding="UTF-8") as csvfile:
                         csv_reader = csv.reader(csvfile)
                         im_dict = {}
                         csv_contents = []
@@ -323,6 +334,28 @@ def create_output_csv(filepath: str) -> None:
                         im_dict[key] = smiles
                         im_dict[key].append(confidence)
                         output_dict[doi].update(im_dict)
+    return output_dict
+def create_output_csv(filepath: str,output_dict: dict):
+    """
+
+    This function takes the path to a PDF file, loops through the affiliated directory with each subdirectory,
+    and extracts all previously created CSV files containing SMILES and confidence scores.
+    It then concatenates the data and creates an output CSV file for one publication containing all necessary information.
+
+    Args:
+        filepath (str): Path to a PDF file with subdirectories containing segmented images.
+        output_dict (dict): Output dictionary containing SMILES and confidence scores for each segmented image.
+
+    Returns:
+        None
+
+    Example:
+        >>> create_output_csv('path/to/example.pdf', output_dict)
+
+        This will concatenate CSV files from subdirectories and create an output CSV file.
+    """
+    filename = Path(filepath).stem
+    dirpath = filepath[:-4]
     first_level_keys = list(output_dict.keys())
     data_rows = []
     for first_level_key in first_level_keys:
@@ -481,8 +514,26 @@ def get_parse_error(merged_csv: str, terminal_output: str) -> None:
     df["SMILES Error"] = all_errors
     df.to_csv(merged_csv)
 
-
-def analyze_seg_pred_final(merged_csv_with_errors: str) -> None:
+def get_dirnames(merged_csv_with_errors:str) -> list: 
+    absolute_path = Path(merged_csv_with_errors)
+    parent_path = absolute_path.parent.absolute()
+    df = pd.read_csv(merged_csv_with_errors)
+    unique = df["DOI/Filename"].unique()
+    dirnames = []
+    doilist = []
+    for doi in unique:
+        doilist.append(doi)
+        if "/" in doi:
+            parts = doi.split("/")
+            dirname = parts[-1]
+            if "." in dirname:
+                dirname = dirname.split(".")[-1]
+            dirnames.append(dirname)
+        else:
+            dirnames.append(doi)
+        
+    return parent_path, dirnames
+def analyze_seg_pred_final(dirnames: list, parent_path:str) -> None:
     """Generate a PDF report for each page in the input publication, displaying segmented and predicted chemical structure images side by side, or showing parsing errors if SMILES is not parsable.
 
     Args:
@@ -501,22 +552,7 @@ def analyze_seg_pred_final(merged_csv_with_errors: str) -> None:
         >>> analyze_seg_pred_final("path/to/merged_csv_with_errors.csv")
 
     """
-    absolute_path = Path(merged_csv_with_errors)
-    parent_path = absolute_path.parent.absolute()
-    df = pd.read_csv(merged_csv_with_errors)
-    unique = df["DOI/Filename"].unique()
-    dirnames = []
-    doilist = []
-    for doi in unique:
-        doilist.append(doi)
-        if "/" in doi:
-            parts = doi.split("/")
-            dirname = parts[-1]
-            if "." in dirname:
-                dirname = dirname.split(".")[-1]
-            dirnames.append(dirname)
-        else:
-            dirnames.append(doi)
+
     for dir_name in dirnames:
         finished_dir_path = os.path.join(parent_path, dir_name)
         subdirectories = [
