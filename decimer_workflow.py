@@ -515,6 +515,24 @@ def get_parse_error(merged_csv: str, terminal_output: str) -> None:
     df.to_csv(merged_csv)
 
 def get_dirnames(merged_csv_with_errors:str) -> list: 
+    """Extract unique directory names from the DOI/Filename column of a merged CSV file.
+
+    This function takes the path to a merged CSV file with errors and extracts unique directory names
+    from the 'DOI/Filename' column. It parses each entry in the column to extract the directory name,
+    considering the possibility of a directory structure represented by slashes ('/').
+
+    Args:
+        merged_csv_with_errors (str): Path to the merged CSV file with errors.
+
+    Returns:
+        list: A list of unique directory names extracted from the DOI/Filename column.
+
+    Example:
+        >>> get_dirnames('path/to/merged_csv_with_errors.csv')
+
+        This will extract unique directory names from the 'DOI/Filename' column of the merged CSV file
+        and return a list of those directory names.
+    """
     absolute_path = Path(merged_csv_with_errors)
     parent_path = absolute_path.parent.absolute()
     df = pd.read_csv(merged_csv_with_errors)
@@ -600,6 +618,8 @@ def analyze_seg_pred_final(dirnames: list, parent_path:str) -> None:
                         predicted_images.append(predicted_image_filepath)
                     else:
                         predicted_images.append("SMILES couldn't be parsed")
+                        
+def generate_analyzing_pdf(smiles_list,conf_list):
                 geometry_options = {
                     "tmargin": "1cm",
                     "lmargin": "2cm",
