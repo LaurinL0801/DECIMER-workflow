@@ -15,8 +15,7 @@ from DECIMER import predict_SMILES_with_confidence
 from rdkit import Chem
 from rdkit.Chem import Draw
 from decimer_segmentation import segment_chemical_structures_from_file
-from pylatex import Document, Figure, SubFigure, NoEscape, MiniPage, NewLine, NewPage
-from pylatex.figure import Figure
+from fpdf import FPDF
 
 
 def create_parser():
@@ -168,6 +167,7 @@ def create_output_directory(filepath: str) -> None:
     output_directory = filepath[:-4]
     if not os.path.isdir(output_directory):
         os.mkdir(output_directory)
+    return output_directory
 
 
 def get_single_pages(filepath: str) -> None:
@@ -262,7 +262,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                 avg_confidence = mean(confidence_list)
                 data = [[smiles], [avg_confidence]]
                 csv_path = f"{im_path[:-13]}predicted.csv"
-                with open(csv_path, "w",encoding="UTF-8") as csvfile:
+                with open(csv_path, "w", encoding="UTF-8") as csvfile:
                     csv_writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                     csv_writer.writerows(data)
                 mol = Chem.MolFromSmiles(smiles, sanitize=False)
@@ -271,6 +271,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                     Draw.MolToFile(mol, predicted_image_title)
                 except ValueError:
                     pass
+
 
 def get_doi_from_file(filepath: str) -> str:
     """Extract DOI or filename from the given file path.
@@ -293,6 +294,7 @@ def get_doi_from_file(filepath: str) -> str:
     except IndexError:
         doi = filename
     return doi
+
 
 def create_output_dictionary(filepath: str, doi: str) -> None:
     """Create an output dictionary containing SMILES and confidence scores for each segmented image.
@@ -321,7 +323,7 @@ def create_output_dictionary(filepath: str, doi: str) -> None:
             for subfiles in newdir_list:
                 newfilepath = os.path.join(newdirpath, subfiles)
                 if newfilepath.endswith(".csv"):
-                    with open(newfilepath, "r",encoding="UTF-8") as csvfile:
+                    with open(newfilepath, "r", encoding="UTF-8") as csvfile:
                         csv_reader = csv.reader(csvfile)
                         im_dict = {}
                         csv_contents = []
@@ -335,27 +337,16 @@ def create_output_dictionary(filepath: str, doi: str) -> None:
                         im_dict[key].append(confidence)
                         output_dict[doi].update(im_dict)
     return output_dict
-def create_output_csv(filepath: str,output_dict: dict):
-    """
 
-    This function takes the path to a PDF file, loops through the affiliated directory with each subdirectory,
-    and extracts all previously created CSV files containing SMILES and confidence scores.
-    It then concatenates the data and creates an output CSV file for one publication containing all necessary information.
 
-    Args:
-        filepath (str): Path to a PDF file with subdirectories containing segmented images.
-        output_dict (dict): Output dictionary containing SMILES and confidence scores for each segmented image.
+def custom_sort(image_id):
+    parts = image_id.split("_")
+    return int(parts[1]), int(parts[2])
 
-    Returns:
-        None
 
-    Example:
-        >>> create_output_csv('path/to/example.pdf', output_dict)
-
-        This will concatenate CSV files from subdirectories and create an output CSV file.
-    """
+def create_output_csv(filepath: str, output_dict: dict) -> None:
     filename = Path(filepath).stem
-    dirpath = filepath[:-4]
+    dirpath = Path(filepath).parent
     first_level_keys = list(output_dict.keys())
     data_rows = []
     for first_level_key in first_level_keys:
@@ -366,7 +357,7 @@ def create_output_csv(filepath: str,output_dict: dict):
             data_rows.append(
                 [first_level_key, second_level_key, smiles, confidence_score]
             )
-    df = pd.DataFrame(
+    df_doi_imid_smiles_conf = pd.DataFrame(
         data_rows,
         columns=[
             "DOI/Filename",
@@ -375,9 +366,119 @@ def create_output_csv(filepath: str,output_dict: dict):
             "Avg Confidence Score",
         ],
     )
-    df.sort_values(by=["Image ID"])
-    out_csv_path = os.path.join(dirpath, f"{filename}_out.csv")
-    df.to_csv(out_csv_path)
+    df_doi_imid_smiles_conf["sort_key"] = df_doi_imid_smiles_conf["Image ID"].apply(
+        custom_sort
+    )
+    df_doi_imid_smiles_conf = df_doi_imid_smiles_conf.sort_values(by="sort_key").drop(
+        columns="sort_key"
+    )
+    out_csv_path = os.path.join(dirpath, filename, f"{filename}_out.csv")
+    df_doi_imid_smiles_conf.to_csv(out_csv_path, index=False)
+    return df_doi_imid_smiles_conf
+
+
+def move_pdf(filepath: str) -> None:
+    """Move a PDF file to its own directory.
+
+    Args:
+        filepath (str): Path to the PDF file.
+
+    Returns:
+        None
+
+    Example:
+        >>> move_pdf('path/to/example.pdf')
+
+        This will move the 'example.pdf' file to a directory named 'example'.
+    """
+    output_dir = filepath[:-4]
+    file_stem = Path(filepath).stem
+    pdf_out = f"{file_stem}.pdf"
+    output_path = os.path.join(output_dir, pdf_out)
+    shutil.move(filepath, output_path)
+
+
+def get_parse_error(output_df, out_csv_path: str, terminal_output: str) -> None:
+    """Get parsing errors from RDKit for each SMILES in a merged CSV file (if an error occurs).
+
+    This function reads a merged CSV file containing SMILES predictions and checks for parsing errors
+    based on the terminal output. It updates the CSV with a new column 'SMILES Error' containing the error messages.
+
+    Args:
+        merged_csv (str): Path to the merged CSV file.
+        terminal_output (str): Path to the terminal output file.
+
+    Returns:
+        None
+
+    Example:
+        >>> get_parse_error('path/to/merged_output.csv', 'path/to/rdkit_terminal_output.txt')
+
+        This will update 'merged_output.csv' with a new column 'SMILES Error' based on parsing errors.
+    """
+    with open(terminal_output, "r") as file:
+        ter_output = file.readlines()
+    all_errors = []
+    for smiles in output_df["Predicted Smiles"]:
+        matching = [s for s in ter_output if smiles in s]
+        if matching:
+            msg = matching[0]
+            word1 = "SMILES"
+            word2_options = ("parsing", "input")
+            pattern = re.compile(
+                f'{re.escape(word1)}(.*?)(?:{ "|".join(map(re.escape, word2_options)) })',
+                re.DOTALL,
+            )
+            match = pattern.search(msg)
+            if match:
+                error_msg = match.group(0)
+        else:
+            error_msg = None
+        all_errors.append(error_msg)
+    output_df["SMILES Error"] = all_errors
+    output_df_with_errors = output_df
+    output_df_with_errors.to_csv(out_csv_path)
+    return output_df_with_errors
+
+
+def get_predicted_images(output_df_with_errors):
+    indexes_with_none = output_df_with_errors[
+        output_df_with_errors.isna().any(axis=1)
+    ].index
+    for idx in indexes_with_none:
+        im_id = output_df_with_errors.loc[idx, "Image ID"]
+        output_df_with_errors.loc[idx, "SMILES Error"] = f"{im_id}_predicted.png"
+        output_df_with_errors_and_pred = output_df_with_errors
+    return output_df_with_errors_and_pred
+
+
+def create_pdf(filepath, output_df_with_errors_and_pred):
+    """creates a pdf containing image name SMILES confidence score as well as the segmented image and the predicted image or SMILES parse error"""
+    dirpath = os.path.splitext(filepath)[0]
+    pdf = FPDF(orientation="L")
+    pdf.set_font("Arial", size=12)
+    for idx, row in output_df_with_errors_and_pred.iterrows():
+        pagename = row["Image ID"]
+        pagesplit = pagename.rsplit("_", 1)
+        subdirpath = os.path.join(dirpath, f"{pagesplit[0]}_segments")
+        pdf.add_page()
+        segmented_image_path = os.path.join(subdirpath, f"{pagename}_segmented.png")
+        pdf.cell(0, 10, txt=pagename)
+        pdf.image(segmented_image_path, x=10, y=60, w=70)
+        pdf.set_x(40)
+        pdf.cell(0, 10, txt=row["Predicted Smiles"], ln=True, align="L")
+        predicted_image_name = row["SMILES Error"]
+        predicted_image_path = os.path.join(subdirpath, predicted_image_name)
+        if "SMILES Parse Error" not in predicted_image_path:
+            pdf.image(predicted_image_path, x=120, y=60, w=100)
+            if row["Avg Confidence Score"]:
+                pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
+        else:
+            pdf.cell(0, 10, txt=predicted_image_name, ln=True)
+            if row["Avg Confidence Score"]:
+                pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
+    file_name = os.path.join(dirpath, "output.pdf")
+    pdf.output(file_name)
 
 
 def concatenate_csv_files(
@@ -423,27 +524,6 @@ def concatenate_csv_files(
     return output_file_path
 
 
-def move_pdf(filepath: str) -> None:
-    """Move a PDF file to its own directory.
-
-    Args:
-        filepath (str): Path to the PDF file.
-
-    Returns:
-        None
-
-    Example:
-        >>> move_pdf('path/to/example.pdf')
-
-        This will move the 'example.pdf' file to a directory named 'example'.
-    """
-    output_dir = filepath[:-4]
-    file_stem = Path(filepath).stem
-    pdf_out = f"{file_stem}.pdf"
-    output_path = os.path.join(output_dir, pdf_out)
-    shutil.move(filepath, output_path)
-
-
 def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     """Split a CSV based on confidence scores.
 
@@ -473,270 +553,6 @@ def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     bad.to_csv(output_bad)
 
 
-def get_parse_error(merged_csv: str, terminal_output: str) -> None:
-    """Get parsing errors from RDKit for each SMILES in a merged CSV file (if an error occurs).
-
-    This function reads a merged CSV file containing SMILES predictions and checks for parsing errors
-    based on the terminal output. It updates the CSV with a new column 'SMILES Error' containing the error messages.
-
-    Args:
-        merged_csv (str): Path to the merged CSV file.
-        terminal_output (str): Path to the terminal output file.
-
-    Returns:
-        None
-
-    Example:
-        >>> get_parse_error('path/to/merged_output.csv', 'path/to/rdkit_terminal_output.txt')
-
-        This will update 'merged_output.csv' with a new column 'SMILES Error' based on parsing errors.
-    """
-    df = pd.read_csv(merged_csv)
-    with open(terminal_output, "r") as file:
-        ter_output = file.readlines()
-    all_errors = []
-    for smiles in df["Predicted Smiles"]:
-        matching = [s for s in ter_output if smiles in s]
-        if matching:
-            msg = matching[0]
-            word1 = "SMILES"
-            word2_options = ("parsing", "input")
-            pattern = re.compile(
-                f'{re.escape(word1)}(.*?)(?:{ "|".join(map(re.escape, word2_options)) })',
-                re.DOTALL,
-            )
-            match = pattern.search(msg)
-            if match:
-                error_msg = match.group(0)
-        else:
-            error_msg = None
-        all_errors.append(error_msg)
-    df["SMILES Error"] = all_errors
-    df.to_csv(merged_csv)
-
-def get_dirnames(merged_csv_with_errors:str) -> list: 
-    """Extract unique directory names from the DOI/Filename column of a merged CSV file.
-
-    This function takes the path to a merged CSV file with errors and extracts unique directory names
-    from the 'DOI/Filename' column. It parses each entry in the column to extract the directory name,
-    considering the possibility of a directory structure represented by slashes ('/').
-
-    Args:
-        merged_csv_with_errors (str): Path to the merged CSV file with errors.
-
-    Returns:
-        list: A list of unique directory names extracted from the DOI/Filename column.
-
-    Example:
-        >>> get_dirnames('path/to/merged_csv_with_errors.csv')
-
-        This will extract unique directory names from the 'DOI/Filename' column of the merged CSV file
-        and return a list of those directory names.
-    """
-    absolute_path = Path(merged_csv_with_errors)
-    parent_path = absolute_path.parent.absolute()
-    df = pd.read_csv(merged_csv_with_errors)
-    unique = df["DOI/Filename"].unique()
-    dirnames = []
-    doilist = []
-    for doi in unique:
-        doilist.append(doi)
-        if "/" in doi:
-            parts = doi.split("/")
-            dirname = parts[-1]
-            if "." in dirname:
-                dirname = dirname.split(".")[-1]
-            dirnames.append(dirname)
-        else:
-            dirnames.append(doi)
-        
-    return parent_path, dirnames
-def analyze_seg_pred_final(dirnames: list, parent_path:str) -> None:
-    """Generate a PDF report for each page in the input publication, displaying segmented and predicted chemical structure images side by side, or showing parsing errors if SMILES is not parsable.
-
-    Args:
-        merged_csv_with_errors (str): Path to the CSV file containing errors concatenated.
-
-    Returns:
-        None: The function generates PDF files with segmented and predicted images for each page in each publication, if chemical structure images are present.
-
-    Note:
-        The function reads a CSV file containing information about segmented images and their predictions. It then organizes the images into a PDF report, with each page displaying segmented and predicted images or error messages if SMILES parsing fails.
-
-    Raises:
-        Any exceptions raised during file reading, processing, or PDF generation will be propagated.
-
-    Example:
-        >>> analyze_seg_pred_final("path/to/merged_csv_with_errors.csv")
-
-    """
-
-    for dir_name in dirnames:
-        finished_dir_path = os.path.join(parent_path, dir_name)
-        subdirectories = [
-            d
-            for d in os.listdir(finished_dir_path)
-            if os.path.isdir(os.path.join(finished_dir_path, d))
-        ]
-        num_list = []
-        for page in subdirectories:
-            page_nums = [int(s) for s in re.findall(r"\d+", page)]
-            num_list.append(page_nums[0])
-        subdirectories_sorted = [x for _, x in sorted(zip(num_list, subdirectories))]
-        for subdir in subdirectories_sorted:
-            subdirectory_path = os.path.join(finished_dir_path, subdir)
-            segmented_images = [
-                f for f in os.listdir(subdirectory_path) if f.endswith("segmented.png")
-            ]
-            num_list_im = []
-            for im in segmented_images:
-                im_nums = [int(s) for s in re.findall(r"\d+", im)]
-                num_list_im.append(im_nums[0])
-            segmented_images_sorted = [
-                x for _, x in sorted(zip(num_list_im, segmented_images))
-            ]
-            predicted_images = []
-            smiles_list = []
-            conf_list = []
-            if segmented_images_sorted:
-                for segmented_image in segmented_images_sorted:
-                    segmented_image_filepath = os.path.join(
-                        subdirectory_path, segmented_image
-                    )
-                    csv_filepath = f"{segmented_image_filepath[:-13]}predicted.csv"
-                    with open(csv_filepath, "r") as csv_file:
-                        csv_reader = csv_file
-                        rowlist = []
-                        for row in csv_reader:
-                            rowlist.append(row)
-                    smiles_list.append(rowlist[0])
-                    conf_list.append(rowlist[1])
-                    predicted_image_filepath = (
-                        f"{segmented_image_filepath[:-13]}predicted.png"
-                    )
-                    if os.path.exists(predicted_image_filepath):
-                        predicted_images.append(predicted_image_filepath)
-                    else:
-                        predicted_images.append("SMILES couldn't be parsed")
-                        
-def generate_analyzing_pdf(smiles_list,conf_list):
-                geometry_options = {
-                    "tmargin": "1cm",
-                    "lmargin": "2cm",
-                    "rmargin": "2cm",
-                }
-                doc = Document(
-                    default_filepath=subdirectory_path,
-                    document_options=["12pt", "landscape"],
-                    page_numbers=False,
-                    geometry_options=geometry_options,
-                )
-                for index, segmented_image in enumerate(segmented_images_sorted):
-                    segmented_image_filepath = os.path.join(
-                        subdirectory_path, segmented_image
-                    )
-                    predicted_image_accessed = predicted_images[index]
-                    predicted_image_filepath = predicted_image_accessed
-                    if predicted_image_accessed.endswith(".png"):
-                        predicted_image_name = Path(predicted_image_filepath).stem
-                    else:
-                        predicted_image_name = "SMILES couldn't be parsed"
-                    segmented_image_name = Path(segmented_image_filepath).stem
-                    confidence_score = conf_list[index]
-                    smiles = smiles_list[index]
-                    with doc.create(Figure(position="h!")) as figure:
-                        with doc.create(MiniPage(width="0.48\\textwidth")) as mp:
-                            with mp.create(
-                                SubFigure(position="b", width=NoEscape(r"1\linewidth"))
-                            ) as segmented_image:
-                                segmented_image.add_image(
-                                    segmented_image_filepath,
-                                    width=NoEscape(r"1\linewidth"),
-                                )
-                                segmented_image.add_caption(f"{segmented_image_name}")
-                        if os.path.exists(predicted_image_filepath):
-                            with doc.create(MiniPage(width="0.48\\textwidth")) as mp:
-                                with mp.create(
-                                    SubFigure(
-                                        position="b", width=NoEscape(r"1\linewidth")
-                                    )
-                                ) as predicted_image:
-                                    predicted_image.add_image(
-                                        predicted_image_filepath,
-                                        width=NoEscape(r"1\linewidth"),
-                                    )
-                                    predicted_image.add_caption(
-                                        f"{predicted_image_name}"
-                                    )
-                        else:
-                            doimatching = [
-                                string for string in doilist if dir_name in string
-                            ]
-                            doi = doimatching[0]
-                            error_msg = df.loc[
-                                (df["DOI/Filename"] == doi)
-                                & (df["Image ID"] == segmented_image_name[:-10]),
-                                "SMILES Error",
-                            ].iloc[0]
-                            with doc.create(MiniPage(width="0.45\\textwidth")) as mp:
-                                doc.append(error_msg)
-                        doc.append(NewLine())
-                        doc.append(f"Avg Confidence Score: {confidence_score[:-2]}")
-                        doc.append(NewLine())
-                        doc.append(f"SMILES: {smiles[:-2]}")
-                        doc.append(NewPage())
-                    doc.append(NoEscape(r"\vspace{2.5cm}"))
-                doc.generate_pdf(clean_tex=True)
-
-
-def merge_pdfs(finished_dir_path: str) -> None:
-    """Concatenate all PDFs for the publication in ascending order of page numbers and save the merged PDF.
-
-    Args:
-        finished_dir_path (str): Path to a finished publication directory.
-
-    Returns:
-        None: The function concatenates PDFs and saves the merged PDF file in the publication directory.
-
-    Note:
-        The function looks for PDF files ending with 'segments.pdf' in the specified directory, sorts them based on page numbers, and merges them into a single PDF file. The merged PDF is then saved in the same directory.
-
-    Raises:
-        Any exceptions raised during file operations or PDF merging will be propagated.
-
-    Example:
-        >>> merge_pdfs("path/to/finished/publication/directory")
-
-    """
-    abs_path = os.path.abspath(finished_dir_path)
-    pdf_list = [
-        os.path.join(abs_path, pdf)
-        for pdf in os.listdir(abs_path)
-        if pdf.endswith("segments.pdf")
-    ]
-    num_list = []
-    for page in pdf_list:
-        page_nums = [int(s) for s in re.findall(r"\d+", page)]
-        num_list.append(page_nums[-1])
-    pdf_list_sorted = [x for _, x in sorted(zip(num_list, pdf_list))]
-    merger = pypdf.PdfWriter()
-    if pdf_list_sorted:
-        if len(pdf_list_sorted) > 1:
-            for pdf in pdf_list_sorted:
-                pdf_path = os.path.join(abs_path, pdf)
-                merger.append(pdf_path)
-                os.remove(pdf_path)
-            output_name = f"{Path(abs_path).stem}_results_merged.pdf"
-            output_path = os.path.join(abs_path, output_name)
-            merger.write(output_path)
-            merger.close()
-        else:
-            for pdf in pdf_list:
-                output_name = f"{Path(abs_path).stem}_results_merged.pdf"
-                output_path = os.path.join(abs_path, output_name)
-                os.rename(pdf, output_path)
-
-
 def main():
     """Execute the entire program, performing segmentation, prediction, CSV creation, and PDF merging for chemical structure images.
 
@@ -762,38 +578,6 @@ def main():
     if conf_value is None:
         conf_value = 0.9
     abs_path_input = os.path.abspath(directory)
-    merged_csv = os.path.join(abs_path_input, "merged_output.csv")
-    output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
-    terminal_output = os.path.join(abs_path_input, output_name[0])
-    if pdflist:
-        for file in pdflist:
-            create_output_directory(file)
-            get_single_pages(file)
-            get_segments(file)
-            get_smiles_with_avg_confidence(file)
-            create_output_csv(file)
-            move_pdf(file)
-            output_file_path = concatenate_csv_files(directory)
-    else:
-        create_output_directory(publication)
-        get_single_pages(publication)
-        get_segments(publication)
-        get_smiles_with_avg_confidence(publication)
-        create_output_csv(publication)
-        move_pdf(publication)
-        output_file_path = concatenate_csv_files(publication[:-4])
-    split_good_bad(output_file_path, conf_value)
-    get_parse_error(merged_csv, terminal_output)
-    analyze_seg_pred_final(merged_csv)
-    finished_directories = [
-        d
-        for d in os.listdir(abs_path_input)
-        if os.path.isdir(os.path.join(abs_path_input, d))
-    ]
-    for finished_directory in finished_directories:
-        finished_path = os.path.join(abs_path_input, finished_directory)
-        print(finished_path)
-        merge_pdfs(finished_path)
 
 
 if __name__ == "__main__":
