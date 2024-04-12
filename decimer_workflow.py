@@ -150,6 +150,30 @@ def get_doi(pdf_name: str) -> str:
     return result
 
 
+def get_doi_from_file(filepath: str) -> str:
+    """Extract DOI or filename from the given file path.
+
+    Args:
+        filepath (str): Path to a file.
+
+    Returns:
+        str: DOI if available, otherwise filename without extension.
+
+    Example:
+        >>> get_doi_from_file('path/to/example.pdf')
+
+        This will return the DOI extracted from the PDF file if available,
+        otherwise, it will return the filename without extension.
+    """
+    filename = Path(filepath).stem
+
+    try:
+        doi = get_doi(filepath)
+    except IndexError:
+        doi = filename
+    return doi
+
+
 def create_output_directory(filepath: str) -> None:
     """Create the output directory based on the given file path.
 
@@ -273,29 +297,6 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                     pass
 
 
-def get_doi_from_file(filepath: str) -> str:
-    """Extract DOI or filename from the given file path.
-
-    Args:
-        filepath (str): Path to a file.
-
-    Returns:
-        str: DOI if available, otherwise filename without extension.
-
-    Example:
-        >>> get_doi_from_file('path/to/example.pdf')
-
-        This will return the DOI extracted from the PDF file if available,
-        otherwise, it will return the filename without extension.
-    """
-    filename = Path(filepath).stem
-    try:
-        doi = get_doi(filepath)
-    except IndexError:
-        doi = filename
-    return doi
-
-
 def create_output_dictionary(filepath: str, doi: str) -> None:
     """Create an output dictionary containing SMILES and confidence scores for each segmented image.
 
@@ -374,28 +375,7 @@ def create_output_csv(filepath: str, output_dict: dict) -> None:
     )
     out_csv_path = os.path.join(dirpath, filename, f"{filename}_out.csv")
     df_doi_imid_smiles_conf.to_csv(out_csv_path, index=False)
-    return df_doi_imid_smiles_conf
-
-
-def move_pdf(filepath: str) -> None:
-    """Move a PDF file to its own directory.
-
-    Args:
-        filepath (str): Path to the PDF file.
-
-    Returns:
-        None
-
-    Example:
-        >>> move_pdf('path/to/example.pdf')
-
-        This will move the 'example.pdf' file to a directory named 'example'.
-    """
-    output_dir = filepath[:-4]
-    file_stem = Path(filepath).stem
-    pdf_out = f"{file_stem}.pdf"
-    output_path = os.path.join(output_dir, pdf_out)
-    shutil.move(filepath, output_path)
+    return df_doi_imid_smiles_conf, out_csv_path
 
 
 def get_parse_error(output_df, out_csv_path: str, terminal_output: str) -> None:
@@ -452,12 +432,12 @@ def get_predicted_images(output_df_with_errors):
     return output_df_with_errors_and_pred
 
 
-def create_pdf(filepath, output_df_with_errors_and_pred):
+def create_pdf(filepath, output_df_with_errors_and_pred_im):
     """creates a pdf containing image name SMILES confidence score as well as the segmented image and the predicted image or SMILES parse error"""
     dirpath = os.path.splitext(filepath)[0]
     pdf = FPDF(orientation="L")
     pdf.set_font("Arial", size=12)
-    for idx, row in output_df_with_errors_and_pred.iterrows():
+    for idx, row in output_df_with_errors_and_pred_im.iterrows():
         pagename = row["Image ID"]
         pagesplit = pagename.rsplit("_", 1)
         subdirpath = os.path.join(dirpath, f"{pagesplit[0]}_segments")
@@ -553,6 +533,27 @@ def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     bad.to_csv(output_bad)
 
 
+def move_pdf(filepath: str) -> None:
+    """Move a PDF file to its own directory.
+
+    Args:
+        filepath (str): Path to the PDF file.
+
+    Returns:
+        None
+
+    Example:
+        >>> move_pdf('path/to/example.pdf')
+
+        This will move the 'example.pdf' file to a directory named 'example'.
+    """
+    output_dir = filepath[:-4]
+    file_stem = Path(filepath).stem
+    pdf_out = f"{file_stem}.pdf"
+    output_path = os.path.join(output_dir, pdf_out)
+    shutil.move(filepath, output_path)
+
+
 def main():
     """Execute the entire program, performing segmentation, prediction, CSV creation, and PDF merging for chemical structure images.
 
@@ -572,12 +573,34 @@ def main():
     >>> main()
     """
     args = create_parser()
-    publication = get_filepath(args)
     pdflist, directory = get_list_of_files(args)
     conf_value = get_conf_value(args)
     if conf_value is None:
         conf_value = 0.9
     abs_path_input = os.path.abspath(directory)
+    output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
+    terminal_output = os.path.join(abs_path_input, output_name[0])
+    print(pdflist)
+    for pdf in pdflist:
+        print(pdf)
+        doi = get_doi_from_file(pdf)
+        print(doi)
+        create_output_directory(pdf)
+        get_single_pages(pdf)
+        get_segments(pdf)
+        get_smiles_with_avg_confidence(pdf)
+        out_dict = create_output_dictionary(pdf, doi)
+        df_doi_imid_smiles_conf, out_csv_path = create_output_csv(pdf, out_dict)
+        output_df_with_errors = get_parse_error(
+            df_doi_imid_smiles_conf, out_csv_path, terminal_output
+        )
+        output_df_with_errors_and_pred_im = get_predicted_images(
+            pdf, output_df_with_errors
+        )
+        create_pdf(pdf, output_df_with_errors_and_pred_im)
+        move_pdf(pdf)
+    csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
+    split_good_bad(csv_path, conf_value)
 
 
 if __name__ == "__main__":
