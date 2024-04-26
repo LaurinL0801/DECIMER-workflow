@@ -16,6 +16,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from decimer_segmentation import segment_chemical_structures_from_file
 from fpdf import FPDF
+from datetime import datetime
 
 
 def create_parser():
@@ -663,6 +664,10 @@ def main():
     abs_path_input = os.path.abspath(directory)
     output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
     terminal_output = os.path.join(abs_path_input, output_name[0])
+    time_list = []
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    time_list.append(current_time)
     for pdf in pdflist:
         doi = get_doi_from_file(pdf)
         create_output_directory(pdf)
@@ -677,9 +682,12 @@ def main():
         output_df_with_errors_and_pred_im = get_predicted_images(output_df_with_errors)
         create_pdf(pdf, output_df_with_errors_and_pred_im)
         move_pdf(pdf)
+        now = datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+        time_list.append(current_time)
     csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
     split_good_bad(csv_path, conf_value)
-
+    print(time_list)
 
 if __name__ == "__main__":
     main()
