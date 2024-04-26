@@ -143,8 +143,7 @@ def get_doi(pdf_name: str) -> str:
     with open(pdf_name, "rb") as file:
         pdf_reader = pypdf.PdfReader(file)
         content = ""
-        for i in enumerate(pdf_reader.pages):
-            page = pdf_reader.pages[i]
+        for page in pdf_reader.pages:
             content += page.extract_text()
     result = re.findall(pattern, content)[0]
     return result
@@ -242,8 +241,8 @@ def get_segments(filepath: str) -> None:
             segments = segment_chemical_structures_from_file(
                 image_path, expand=True, poppler_path=None
             )
-            for segment_index in enumerate(segments):
-                out_img = Image.fromarray(segments[segment_index])
+            for segment_index, img_array in enumerate(segments):
+                out_img = Image.fromarray(img_array)
                 page_path = Path(image_path).stem
                 out_img_path = os.path.join(
                     out_dir_path, f"{page_path}_{segment_index}_segmented.png"
@@ -297,7 +296,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                     pass
 
 
-def create_output_dictionary(filepath: str, doi: str) -> None:
+def create_output_dictionary(filepath: str, doi: str) -> dict:
     """Create an output dictionary containing SMILES and confidence scores for each segmented image.
 
     Args:
@@ -310,7 +309,22 @@ def create_output_dictionary(filepath: str, doi: str) -> None:
     Example:
         >>> create_output_dictionary('path/to/example.pdf', 'example_doi')
 
-        This will create an output dictionary containing SMILES and confidence scores for each segmented image.
+    This function traverses through the directory structure created from segmented images stored in CSV files within subdirectories of the provided PDF filepath. It extracts SMILES and confidence scores from these CSV files and organizes them into a dictionary.
+
+    The output dictionary has the following structure:
+    {
+        'doi': {
+            'image_id': ['smiles', 'confidence_score']
+        }
+    }
+
+    Note:
+    - The `filepath` should point to a PDF file with the same name as the provided `doi`, containing subdirectories with CSV files containing SMILES and confidence scores.
+    - The `doi` parameter should be unique and can be used as a key in the output dictionary.
+    - Each image is uniquely identified by its `image_id`, derived from the filename of the CSV file.
+    - SMILES and confidence scores are extracted from the first and second rows of each CSV file, respectively.
+    - If multiple images share the same `image_id`, only the last SMILES and confidence score encountered are stored in the output dictionary.
+
     """
     output_dict = {doi: {}}
     dirpath = filepath[:-4]
@@ -340,12 +354,49 @@ def create_output_dictionary(filepath: str, doi: str) -> None:
     return output_dict
 
 
-def custom_sort(image_id):
+def custom_sort(image_id: str) -> tuple:
+    """Custom sorting function for sorting image IDs based on numerical parts.
+
+    Args:
+        image_id (str): Image ID in the format 'prefix_num1_num2'.
+
+    Returns:
+        tuple: Tuple containing two integers representing the numerical parts of the image ID.
+
+    Example:
+        >>> custom_sort('prefix_10_2')
+        (10, 2)
+
+    This function is used as a key function for sorting image IDs based on their numerical parts. It extracts the numerical parts from the provided image ID string and returns them as a tuple. The sorting is primarily used to ensure a consistent order of image IDs when creating the output CSV file.
+    """
     parts = image_id.split("_")
     return int(parts[1]), int(parts[2])
 
 
-def create_output_csv(filepath: str, output_dict: dict) -> None:
+def create_output_csv(filepath: str, output_dict: dict) -> tuple:
+    """Create an output CSV file containing DOI/Filename, image IDs, SMILES, and confidence scores.
+
+    Args:
+        filepath (str): Path to the PDF file.
+        output_dict (dict): Output dictionary containing SMILES and confidence scores for each segmented image.
+
+    Returns:
+        tuple: Tuple containing a pandas DataFrame with the data and the path to the output CSV file.
+
+    Example:
+        >>> create_output_csv('path/to/example.pdf', {'example_doi': {'image_id': ['smiles', 'confidence_score']}})
+
+    This function generates an output CSV file containing the extracted SMILES and confidence scores for each segmented image. It utilizes the provided output dictionary to organize the data and writes it to a CSV file.
+
+    The CSV file contains the following columns:
+    - DOI/Filename: The DOI or filename of the PDF file.
+    - Image ID: Unique identifier for each segmented image.
+    - Predicted Smiles: SMILES representation of the predicted chemical structure.
+    - Avg Confidence Score: Average confidence score associated with the predicted SMILES.
+
+    Note:
+    - The output CSV file is named based on the filename of the provided PDF file and saved in the same directory.
+    """
     filename = Path(filepath).stem
     dirpath = Path(filepath).parent
     first_level_keys = list(output_dict.keys())
@@ -421,7 +472,22 @@ def get_parse_error(output_df, out_csv_path: str, terminal_output: str) -> None:
     return output_df_with_errors
 
 
-def get_predicted_images(output_df_with_errors):
+def get_predicted_images(output_df_with_errors: pd.DataFrame) -> pd.DataFrame:
+    """Assign predicted image names for rows with missing values in the output DataFrame.
+
+    Args:
+        output_df_with_errors (pd.DataFrame): DataFrame containing rows with missing values.
+
+    Returns:
+        pd.DataFrame: DataFrame with predicted image names assigned to rows with missing values.
+
+    This function identifies rows in the input DataFrame where at least one column contains a missing value (NaN). It then generates predicted image names based on the 'Image ID' column and assigns them to the corresponding rows. The predicted image name is constructed by appending '_predicted.png' to the 'Image ID'.
+
+    Note:
+    - The input DataFrame should contain the 'Image ID' column.
+    - Rows with missing values are identified using the 'isna()' method.
+    - Predicted image names are assigned to the 'SMILES Error' column.
+    """
     indexes_with_none = output_df_with_errors[
         output_df_with_errors.isna().any(axis=1)
     ].index
@@ -432,8 +498,23 @@ def get_predicted_images(output_df_with_errors):
     return output_df_with_errors_and_pred
 
 
-def create_pdf(filepath, output_df_with_errors_and_pred_im):
-    """creates a pdf containing image name SMILES confidence score as well as the segmented image and the predicted image or SMILES parse error"""
+def create_pdf(filepath: str, output_df_with_errors_and_pred_im: pd.DataFrame) -> None:
+    """Create a PDF containing image names, SMILES, confidence scores, segmented images, and predicted images/SMILES parse errors.
+
+    Args:
+        filepath (str): Path to the PDF file.
+        output_df_with_errors_and_pred_im (pd.DataFrame): DataFrame containing data for generating the PDF.
+
+    Returns:
+        None
+
+    This function generates a PDF containing information about segmented images, predicted SMILES, confidence scores, and corresponding images or SMILES parse errors. Each page of the PDF displays one segmented image along with its predicted SMILES or error message.
+
+    Note:
+    - The PDF is created using the FPDF library.
+    - Each page of the PDF corresponds to a row in the input DataFrame.
+    - The DataFrame should contain columns 'Image ID', 'Predicted Smiles', 'SMILES Error', and 'Avg Confidence Score'.
+    """
     dirpath = os.path.splitext(filepath)[0]
     pdf = FPDF(orientation="L")
     pdf.set_font("Arial", size=12)
@@ -577,14 +658,13 @@ def main():
     conf_value = get_conf_value(args)
     if conf_value is None:
         conf_value = 0.9
+
+    conf_value = float(conf_value)
     abs_path_input = os.path.abspath(directory)
     output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
     terminal_output = os.path.join(abs_path_input, output_name[0])
-    print(pdflist)
     for pdf in pdflist:
-        print(pdf)
         doi = get_doi_from_file(pdf)
-        print(doi)
         create_output_directory(pdf)
         get_single_pages(pdf)
         get_segments(pdf)
@@ -594,9 +674,7 @@ def main():
         output_df_with_errors = get_parse_error(
             df_doi_imid_smiles_conf, out_csv_path, terminal_output
         )
-        output_df_with_errors_and_pred_im = get_predicted_images(
-            pdf, output_df_with_errors
-        )
+        output_df_with_errors_and_pred_im = get_predicted_images(output_df_with_errors)
         create_pdf(pdf, output_df_with_errors_and_pred_im)
         move_pdf(pdf)
     csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
