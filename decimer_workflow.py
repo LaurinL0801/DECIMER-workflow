@@ -636,6 +636,67 @@ def move_pdf(filepath: str) -> None:
     shutil.move(filepath, output_path)
 
 
+def get_time_per_publication(input_path: str, time_list: list, pdf_list: list) -> None:
+    """Calculate time differences between PDF files based on provided timestamps.
+
+    This function calculates the time difference between consecutive timestamps
+    in the given `time_list` and associates each time difference with its corresponding
+    PDF file in `pdf_list`. The calculated time differences are then saved to a CSV
+    file named 'times.csv' in the specified `input_path`.
+
+    Args:
+        input_path (str): Path to the input directory containing PDF files.
+        time_list (list): List of timestamp strings in the format '%H:%M:%S'.
+        pdf_list (list): List of PDF file names corresponding to the timestamps.
+
+    Returns:
+        None
+
+    Example:
+        >>> get_times('/path/to/input', ['14:40:09', '14:41:23', '14:41:43'], ['example1.pdf', 'example2.pdf'])
+
+        This will calculate the time differences between timestamps and save the results
+        to a CSV file 'times.csv' in the '/path/to/input' directory.
+
+    """
+    csv_out_path = os.path.join(input_path, "times.csv")
+    time_dict = {}
+
+    for idx, pdf in enumerate(pdf_list):
+        start_time = datetime.strptime(time_list[idx], "%H:%M:%S")
+        if idx + 1 < len(time_list):
+            end_time = datetime.strptime(time_list[idx + 1], "%H:%M:%S")
+            delta = end_time - start_time
+            time_dict[pdf] = delta
+
+    with open(csv_out_path, "w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["PDF File", "Time Difference"])
+
+        for key, value in time_dict.items():
+            writer.writerow([key, str(value)])
+
+
+def extract_absolute_times() -> str:
+    """Extract the current absolute time in the '%H:%M:%S' format.
+
+    This function retrieves the current time using the system clock and
+    formats it as a string in the '%H:%M:%S' format, representing hours,
+    minutes, and seconds.
+
+    Returns:
+        str: A string containing the current time in the '%H:%M:%S' format.
+
+    Example:
+        >>> extract_absolute_times()
+        '15:30:45'
+
+    """
+    now = datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    return current_time
+
+
 def main():
     """Execute the entire program, performing segmentation, prediction, CSV creation, and PDF merging for chemical structure images.
 
@@ -655,11 +716,10 @@ def main():
     >>> main()
     """
     args = create_parser()
-    pdflist, directory = get_list_of_files(args)
+    pdf_list, directory = get_list_of_files(args)
     conf_value = get_conf_value(args)
     if conf_value is None:
         conf_value = 0.9
-
     conf_value = float(conf_value)
     abs_path_input = os.path.abspath(directory)
     output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
@@ -668,7 +728,7 @@ def main():
     now = datetime.now()
     current_time = now.strftime("%H:%M:%S")
     time_list.append(current_time)
-    for pdf in pdflist:
+    for pdf in pdf_list:
         doi = get_doi_from_file(pdf)
         create_output_directory(pdf)
         get_single_pages(pdf)
@@ -682,12 +742,12 @@ def main():
         output_df_with_errors_and_pred_im = get_predicted_images(output_df_with_errors)
         create_pdf(pdf, output_df_with_errors_and_pred_im)
         move_pdf(pdf)
-        now = datetime.now()
-        current_time = now.strftime("%H:%M:%S")
+        current_time = extract_absolute_times()
         time_list.append(current_time)
     csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
     split_good_bad(csv_path, conf_value)
-    print(time_list)
+    get_time_per_publication(abs_path_input, time_list, pdf_list)
+
 
 if __name__ == "__main__":
     main()
