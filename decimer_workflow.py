@@ -7,6 +7,7 @@ from glob import glob
 import csv
 import argparse
 from statistics import mean
+from datetime import datetime
 import pandas as pd
 import pypdf
 from pdf2image import convert_from_path
@@ -16,7 +17,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from decimer_segmentation import segment_chemical_structures_from_file
 from fpdf import FPDF
-from datetime import datetime
+from pdf2doi import pdf2doi
 
 
 def create_parser():
@@ -125,31 +126,6 @@ def get_list_of_files(args: argparse.Namespace) -> Tuple[List[str], str]:
     return pdf_list, directory
 
 
-def get_doi(pdf_name: str) -> str:
-    """Reads a given PDF and extracts the DOI (Digital Object Identifier).
-
-    Args:
-        pdf_name (str): The filepath of the PDF.
-
-    Returns:
-        str: The extracted DOI.
-
-    Example:
-        >>> pdf_path = 'path/to/file.pdf'
-        >>> doi = get_doi(pdf_path)
-        >>> print(doi)
-        '10.1234/example.doi'
-    """
-    pattern = r"\b10\.\d{0,9}\/[-._;()\/:a-zA-Z0-9]+\b"
-    with open(pdf_name, "rb") as file:
-        pdf_reader = pypdf.PdfReader(file)
-        content = ""
-        for page in pdf_reader.pages:
-            content += page.extract_text()
-    result = re.findall(pattern, content)[0]
-    return result
-
-
 def get_doi_from_file(filepath: str) -> str:
     """Extract DOI or filename from the given file path.
 
@@ -165,12 +141,8 @@ def get_doi_from_file(filepath: str) -> str:
         This will return the DOI extracted from the PDF file if available,
         otherwise, it will return the filename without extension.
     """
-    filename = Path(filepath).stem
-
-    try:
-        doi = get_doi(filepath)
-    except IndexError:
-        doi = filename
+    doi_dict = pdf2doi(filepath)
+    doi = doi_dict['identifier']
     return doi
 
 
