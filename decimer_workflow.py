@@ -1,3 +1,39 @@
+"""
+DECIMER Workflow Script
+
+This script implements a workflow for processing PDF publications to extract chemical structures,
+predict SMILES (Simplified Molecular Input Line Entry System) representations with confidence scores,
+and generate comprehensive output reports.
+
+The script performs the following steps:
+1. Parsing command-line arguments to specify input files or directories.
+2. Image segmentation of PDF pages to isolate chemical structure images.
+3. Prediction of SMILES representations with confidence scores for segmented images.
+4. Creation of CSV files containing SMILES and confidence data for each segmented image.
+5. Concatenation and analysis of CSV files to categorize chemical structures based on confidence scores.
+6. Identification of parsing errors and generation of detailed output reports (PDFs) with segmented images
+   and associated SMILES predictions or error messages.
+7. Merging of output PDFs into comprehensive reports for each processed publication.
+
+Command-line Usage:
+- Use `-f` to specify a single PDF file for processing.
+- Use `-folder` to specify a directory containing multiple PDF files for batch processing.
+- Optionally, use `-c` to set a confidence threshold for splitting SMILES predictions.
+
+Example:
+$ python3 decimer_workflow.py -folder path/to/directory/with/publications -c desired_confidence_value_to_split &> path/to/directory/with/publications/out.txt 2>&1
+
+
+Dependencies:
+- Python 3.x
+- DECIMER (https://decimer.ai/)
+- PDF2Image (https://github.com/Belval/pdf2image)
+- RDKit (https://github.com/rdkit/rdkit)
+- FPDF (https://github.com/reingart/pyfpdf)
+
+Author: Laurin Lederer
+"""
+
 import os
 import shutil
 from typing import List, Tuple
@@ -9,7 +45,6 @@ import argparse
 from statistics import mean
 from datetime import datetime
 import pandas as pd
-import pypdf
 from pdf2image import convert_from_path
 from PIL import Image
 from DECIMER import predict_SMILES_with_confidence
@@ -142,7 +177,7 @@ def get_doi_from_file(filepath: str) -> str:
         otherwise, it will return the filename without extension.
     """
     doi_dict = pdf2doi(filepath)
-    doi = doi_dict['identifier']
+    doi = doi_dict["identifier"]
     return doi
 
 
@@ -467,7 +502,7 @@ def get_predicted_images(output_df_with_errors: pd.DataFrame) -> pd.DataFrame:
     for idx in indexes_with_none:
         im_id = output_df_with_errors.loc[idx, "Image ID"]
         output_df_with_errors.loc[idx, "SMILES Error"] = f"{im_id}_predicted.png"
-        output_df_with_errors_and_pred = output_df_with_errors
+    output_df_with_errors_and_pred = output_df_with_errors
     return output_df_with_errors_and_pred
 
 
