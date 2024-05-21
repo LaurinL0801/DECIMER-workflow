@@ -593,6 +593,49 @@ def concatenate_csv_files(
     return output_file_path
 
 
+def concatenate_csv_files(
+    parent_directory: str, output_file: str = "merged_output.csv"
+) -> str:
+    """Concatenate CSV files for all publications from subdirectories.
+
+    This function creates a CSV file that is concatenated for all publications from the previously
+    concatenated CSV for each publication.
+
+    Args:
+        parent_directory (str): Input directory path where the PDFs are. It will also be the output directory
+                               where the merged CSV will be saved.
+        output_file (str, optional): Name to write the output CSV. Defaults to 'merged_output.csv'.
+
+    Returns:
+        str: Filepath of the merged CSV file.
+
+    Example:
+        >>> concatenate_csv_files('path/to/pdfs')
+
+        This will concatenate CSV files for all publications from subdirectories and create 'merged_output.csv'.
+    """
+    subdirectories = [
+        d
+        for d in os.listdir(parent_directory)
+        if os.path.isdir(os.path.join(parent_directory, d))
+    ]
+    dataframes = []
+    for subdirectory in subdirectories:
+        subdirectory_path = os.path.join(parent_directory, subdirectory)
+        csv_files = [f for f in os.listdir(subdirectory_path) if f.endswith(".csv")]
+        if csv_files:
+            for csv_file in csv_files:
+                csv_file_path = os.path.join(subdirectory_path, csv_file)
+                df = pd.read_csv(csv_file_path)
+                dataframes.append(df)
+    merged_data = pd.concat(dataframes)
+    merged_data.reset_index(drop=True, inplace=True)
+    output_file_path = os.path.join(parent_directory, output_file)
+    merged_wo_col0 = merged_data.iloc[:, 1:]
+    merged_wo_col0.to_csv(output_file_path, index=True)
+    return output_file_path
+
+
 def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     """Split a CSV based on confidence scores.
 
@@ -616,10 +659,44 @@ def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     parent_path = path.parent.absolute()
     good = merged_file.loc[merged_file["Avg Confidence Score"] >= value]
     bad = merged_file.loc[merged_file["Avg Confidence Score"] < value]
-    output_good = os.path.join(parent_path, f"avg_conf_higher_than_{value}.csv")
-    output_bad = os.path.join(parent_path, f"avg_conf_lower_than_{value}.csv")
-    good.to_csv(output_good)
-    bad.to_csv(output_bad)
+    output_path_good = os.path.join(parent_path, f"avg_conf_higher_than_{value}.csv")
+    output_path_bad = os.path.join(parent_path, f"avg_conf_lower_than_{value}.csv")
+    good.to_csv(output_path_good)
+    bad.to_csv(output_path_bad)
+    return output_path_good
+
+def create_final_output(output_good: str) -> str:
+    """Filter and clean a CSV file to create a final output CSV.
+
+    This function reads a CSV file, removes rows with specific errors, drops unnecessary columns,
+    and creates a final cleaned CSV file.
+
+    Args:
+        output_good (str): Path to the input CSV file containing the 'good' data.
+
+    Returns:
+        str: Filepath of the final cleaned CSV file.
+
+    Example:
+        >>> create_final_output('path/to/avg_conf_higher_than_0.9.csv')
+
+        This will filter the input CSV and create 'final_extraction.csv' in the same directory.
+    """
+    path = Path(output_good)
+    parent_path = path.parent.absolute()
+    df_final = pd.read_csv(output_good)
+    df_final = df_final[~df_final["SMILES Error"].str.contains("SMILES Parse")]
+    columns_to_drop = [
+        "Unnamed: 0.1",
+        "Unnamed: 0",
+        "Avg Confidence Score",
+        "SMILES Error",
+    ]
+    df_final_filtered = df_final.drop(columns_to_drop, axis=1)
+
+    out_final_csv = os.path.join(parent_path, "final_extraction.csv")
+    df_final_filtered.to_csv(out_final_csv, index=True, index_label="Index")
+    return out_final_csv
 
 
 def move_pdf(filepath: str) -> None:
@@ -752,7 +829,8 @@ def main():
         current_time = extract_absolute_times()
         time_list.append(current_time)
     csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
-    split_good_bad(csv_path, conf_value)
+    output_path_good = split_good_bad(csv_path, conf_value)
+    create_final_output(output_path_good)
     get_time_per_publication(abs_path_input, time_list, pdf_list)
 
 
