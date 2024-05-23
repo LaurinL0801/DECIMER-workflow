@@ -537,8 +537,8 @@ def create_pdf(filepath: str, output_df_with_errors_and_pred_im: pd.DataFrame) -
         pdf.set_x(40)
         pdf.cell(0, 10, txt=row["Predicted Smiles"], ln=True, align="L")
         predicted_image_name = row["SMILES Error"]
-        predicted_image_path = os.path.join(subdirpath, predicted_image_name)
-        if "SMILES Parse Error" not in predicted_image_path:
+        if "SMILES Parse Error" not in predicted_image_name:
+            predicted_image_path = os.path.join(subdirpath, predicted_image_name)
             pdf.image(predicted_image_path, x=120, y=60, w=100)
             if row["Avg Confidence Score"]:
                 pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
