@@ -688,6 +688,7 @@ def create_final_output(output_good: str) -> str:
     path = Path(output_good)
     parent_path = path.parent.absolute()
     df_final = pd.read_csv(output_good)
+    df_final["SMILES Error"] = df_final["SMILES Error"].astype(str)
     df_final = df_final[~df_final["SMILES Error"].str.contains("SMILES Parse")]
     columns_to_drop = [
         "Unnamed: 0.1",
