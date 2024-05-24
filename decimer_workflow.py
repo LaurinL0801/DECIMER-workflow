@@ -178,6 +178,8 @@ def get_doi_from_file(filepath: str) -> str:
     """
     doi_dict = pdf2doi(filepath)
     doi = doi_dict["identifier"]
+    if not doi:
+        doi = Path(filepath).stem
     return doi
 
 
@@ -539,7 +541,8 @@ def create_pdf(filepath: str, output_df_with_errors_and_pred_im: pd.DataFrame) -
         predicted_image_name = row["SMILES Error"]
         if "SMILES Parse Error" not in predicted_image_name:
             predicted_image_path = os.path.join(subdirpath, predicted_image_name)
-            pdf.image(predicted_image_path, x=120, y=60, w=100)
+            if os.path.exists(predicted_image_path):
+                pdf.image(predicted_image_path, x=120, y=60, w=100)
             if row["Avg Confidence Score"]:
                 pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
         else:
