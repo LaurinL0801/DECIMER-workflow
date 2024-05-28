@@ -260,6 +260,37 @@ def get_segments(filepath: str) -> None:
                 out_img.save(out_img_path, "PNG")
 
 
+def find_markush(smiles: str) -> bool:
+    """Determine if a given SMILES string contains characteristics indicative of a Markush structure.
+    Valid characters following R are for elements from the periodic table that start with R.
+
+    Args:
+        smiles (str): The SMILES string to analyze.
+
+    Returns:
+        bool: True if the SMILES string contains Markush structure indicators, otherwise False.
+
+    Example:
+        >>> find_markush("C1CCC(CC1)R2")
+        True
+        >>> find_markush("CCO")
+        False
+    """
+    valid_characters_after_R = ["a", "b", "e", "f", "g", "h", "n", "u"]
+    next_chars = []
+    for idx, char in enumerate(smiles):
+        if char == "R":
+            if idx + 1 < len(smiles):
+                next_char = smiles[idx + 1]
+                next_chars.append(next_char)
+            else:
+                return True
+    if next_chars and any(char not in valid_characters_after_R for char in next_chars):
+        return True
+    if "X" in smiles:
+        return True
+
+
 def get_smiles_with_avg_confidence(filepath: str) -> None:
     """Predict SMILES and average confidence for segmented images in subdirectories.
 
@@ -281,6 +312,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
         and create .csv files and predicted images for each segmented image.
     """
     dirpath = filepath[:-4]
+    smiles_list = []
     for dir_name in [
         d for d in os.listdir(dirpath) if os.path.isdir(os.path.join(dirpath, d))
     ]:
@@ -291,6 +323,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                 smiles_with_confidence = predict_SMILES_with_confidence(im_path)
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
+                smiles_list.append(smiles)
                 confidence_list = [item[1] for item in smiles_with_confidence]
                 avg_confidence = mean(confidence_list)
                 data = [[smiles], [avg_confidence]]
@@ -304,6 +337,35 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                     Draw.MolToFile(mol, predicted_image_title)
                 except ValueError:
                     pass
+    return smiles_list
+
+
+def check_markush(filepath: str, smiles_list: list, markush_path: str) -> bool:
+    """Check if any SMILES in a list exhibit Markush structure characteristics and move the corresponding file.
+
+    This function checks each SMILES string in the provided list for characteristics indicative of a Markush structure
+    using the `find_markush` function. If any SMILES is identified as a Markush structure, the function moves the
+    corresponding file to a specified directory and deletes the directory containing the file.
+
+    Args:
+        filepath (str): The path to the file being checked.
+        smiles_list (list): A list of SMILES strings to be checked for Markush structure characteristics.
+        markush_path (str): The directory path where files identified as Markush structures will be moved.
+
+    Returns:
+        bool: True if any SMILES in the list exhibit Markush structure characteristics and the file is moved,
+              otherwise False.
+
+    Example:
+        >>> check_markush("path/to/file.pdf", ["C1CCC(CC1)R2", "CCO"], "path/to/markush_files")
+        True
+    """
+    filename = Path(filepath).stem
+    bool_list = list(map(find_markush, smiles_list))
+    if True in bool_list:
+        shutil.move(filepath, os.path.join(markush_path, f"{filename}.pdf"))
+        shutil.rmtree(filepath[:-4])
+        return True
 
 
 def create_output_dictionary(filepath: str, doi: str) -> dict:
@@ -668,6 +730,7 @@ def split_good_bad(csv_path: str, value: float = 0.9) -> None:
     bad.to_csv(output_path_bad)
     return output_path_good
 
+
 def create_final_output(output_good: str) -> str:
     """Filter and clean a CSV file to create a final output CSV.
 
@@ -805,6 +868,8 @@ def main():
     """
     args = create_parser()
     pdf_list, directory = get_list_of_files(args)
+    markush_path = os.path.join(directory, "markush_structures")
+    os.makedirs(markush_path, exist_ok=True)
     conf_value = get_conf_value(args)
     if conf_value is None:
         conf_value = 0.9
@@ -821,15 +886,21 @@ def main():
         create_output_directory(pdf)
         get_single_pages(pdf)
         get_segments(pdf)
-        get_smiles_with_avg_confidence(pdf)
-        out_dict = create_output_dictionary(pdf, doi)
-        df_doi_imid_smiles_conf, out_csv_path = create_output_csv(pdf, out_dict)
-        output_df_with_errors = get_parse_error(
-            df_doi_imid_smiles_conf, out_csv_path, terminal_output
-        )
-        output_df_with_errors_and_pred_im = get_predicted_images(output_df_with_errors)
-        create_pdf(pdf, output_df_with_errors_and_pred_im)
-        move_pdf(pdf)
+        smiles_list = get_smiles_with_avg_confidence(pdf)
+        val = check_markush(pdf, smiles_list, markush_path)
+        if val:
+            pass
+        else:
+            out_dict = create_output_dictionary(pdf, doi)
+            df_doi_imid_smiles_conf, out_csv_path = create_output_csv(pdf, out_dict)
+            output_df_with_errors = get_parse_error(
+                df_doi_imid_smiles_conf, out_csv_path, terminal_output
+            )
+            output_df_with_errors_and_pred_im = get_predicted_images(
+                output_df_with_errors
+            )
+            create_pdf(pdf, output_df_with_errors_and_pred_im)
+            move_pdf(pdf)
         current_time = extract_absolute_times()
         time_list.append(current_time)
     csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
