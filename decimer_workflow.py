@@ -287,8 +287,9 @@ def find_markush(smiles: str) -> bool:
                 return True
     if next_chars and any(char not in valid_characters_after_R for char in next_chars):
         return True
-    if "X" in smiles:
+    if "X" in smiles or 'Y' in smiles or 'Z' in smiles:
         return True
+    
 
 
 def get_smiles_with_avg_confidence(filepath: str) -> None:
