@@ -47,7 +47,7 @@ from datetime import datetime
 import pandas as pd
 from pdf2image import convert_from_path
 from PIL import Image
-from DECIMER import predict_SMILES_with_confidence
+from DECIMER import predict_SMILES
 from rdkit import Chem
 from rdkit.Chem import Draw
 from decimer_segmentation import segment_chemical_structures_from_file
@@ -321,7 +321,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
         for im in os.listdir(newdirpath):
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
-                smiles_with_confidence = predict_SMILES_with_confidence(im_path)
+                _, smiles_with_confidence = predict_SMILES(im_path, confidence=True)
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
                 smiles_list.append(smiles)
