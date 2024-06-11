@@ -217,7 +217,7 @@ def get_single_pages(filepath: str) -> None:
 
         This will create individual .png images for each page in the 'path/to/example/' directory.
     """
-    pages = convert_from_path(filepath, 200)
+    pages = convert_from_path(filepath, 96)
     for count, page in enumerate(pages):
         output_path = os.path.join(filepath[:-4], f"page_{count}.png")
         page.save(output_path, "PNG")
@@ -322,6 +322,8 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
                 _, smiles_with_confidence = predict_SMILES(im_path, confidence=True)
+                if smiles_with_confidence[-1] == smiles_with_confidence[-2]:
+                    smiles_with_confidence.pop()
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
                 smiles_list.append(smiles)
