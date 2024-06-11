@@ -322,8 +322,6 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
                 _, smiles_with_confidence = predict_SMILES(im_path, confidence=True)
-                if smiles_with_confidence[-1] == smiles_with_confidence[-2]:
-                    smiles_with_confidence.pop()
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
                 smiles_list.append(smiles)
