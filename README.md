@@ -41,6 +41,6 @@ The segmented images, predicted images, and CSV files are stored in individual d
 
 This script uses the DECIMER library for image segmentation (https://github.com/Kohulan/DECIMER-Image-Segmentation) and SMILES prediction (https://github.com/Kohulan/DECIMER-Image_Transformer).
 
-##License
+## License
 
 This project is licensed under the MIT LICENSE - See the  file for details
