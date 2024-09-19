@@ -324,6 +324,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
                 _, smiles_with_confidence = predict_SMILES(im_path, confidence=True)
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
+                smiles = smiles[:-1]
                 smiles_list.append(smiles)
                 confidence_list = [item[1] for item in smiles_with_confidence]
                 avg_confidence = mean(confidence_list)
