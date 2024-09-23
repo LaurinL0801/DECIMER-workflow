@@ -92,6 +92,9 @@ def create_parser():
     parser.add_argument(
         "-c", help="Enter a value at which the confidences will be split"
     )
+    parser.add_argument(
+        "-m", help="Type '-hand_drawn True' if you want to use the HandDrawn model"
+    )
     args = parser.parse_args()
     return args
 
@@ -133,6 +136,24 @@ def get_conf_value(args: argparse.Namespace) -> str:
     confidence_value = args.c
     return confidence_value
 
+
+def get_model(args: argparse.Namespace) -> bool:
+    """Checks whether you want to use the hand drawn model.
+
+    Args:
+        args (argparse.Namespace): The parsed command-line arguments.
+
+    Returns:
+        bool: True if you want to use the HandDrawn model.
+
+    Example:
+ 
+    """
+    if args.m=="True":
+        HandDrawn = True
+    else:
+        HandDrawn = False
+    return HandDrawn
 
 def get_list_of_files(args: argparse.Namespace) -> Tuple[List[str], str]:
     """Retrieve a list of .pdf files from the specified directory.
@@ -292,7 +313,7 @@ def find_markush(smiles: str) -> bool:
     
 
 
-def get_smiles_with_avg_confidence(filepath: str) -> None:
+def get_smiles_with_avg_confidence(filepath: str, HandDrawn: bool) -> None:
     """Predict SMILES and average confidence for segmented images in subdirectories.
 
     This function takes the path to a PDF file, loops through the affiliated directory with each subdirectory,
@@ -321,7 +342,7 @@ def get_smiles_with_avg_confidence(filepath: str) -> None:
         for im in os.listdir(newdirpath):
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
-                _, smiles_with_confidence = predict_SMILES(im_path, confidence=True)
+                _, smiles_with_confidence = predict_SMILES(im_path, confidence=True, hand_drawn=HandDrawn)
                 smiles_characters = [item[0] for item in smiles_with_confidence]
                 smiles = "".join(smiles_characters)
                 smiles_list.append(smiles)
@@ -872,6 +893,7 @@ def main():
     markush_path = os.path.join(directory, "markush_structures")
     os.makedirs(markush_path, exist_ok=True)
     conf_value = get_conf_value(args)
+    model = get_model(args)
     if conf_value is None:
         conf_value = 0.9
     conf_value = float(conf_value)
@@ -887,7 +909,7 @@ def main():
         create_output_directory(pdf)
         get_single_pages(pdf)
         get_segments(pdf)
-        smiles_list = get_smiles_with_avg_confidence(pdf)
+        smiles_list = get_smiles_with_avg_confidence(pdf,model)
         val = check_markush(pdf, smiles_list, markush_path)
         if val:
             pass
