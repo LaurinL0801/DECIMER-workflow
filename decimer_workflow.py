@@ -238,6 +238,23 @@ def get_segments(filepath: str) -> None:
                 out_img.save(out_img_path, "PNG")
 
 
+def copy_segments(filepath: str) -> None:
+    directory = filepath[:-4]
+    
+    segments_dir = os.path.join(directory, "segments")
+    os.makedirs(segments_dir, exist_ok=True)
+    for root, _, files in os.walk(directory):
+        if root ==segments_dir:
+            continue
+
+        for file in files:
+            if file.endswith("segmented.png"):
+                imgpath = os.path.join(root, file)
+                imgname = os.path.basename(imgpath)
+                copied_path = os.path.join(segments_dir,imgname)
+                shutil.copyfile(imgpath, copied_path)
+
+
 def get_molnextr_inp(args: argparse.Namespace):
     """Retrieve the path to the MolNexTR model and which device to use.
     Args:
