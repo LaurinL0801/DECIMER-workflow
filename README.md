@@ -17,6 +17,8 @@ This script performs the segmentation of chemical structures from PDFs, predicts
 
 ## Installation
 
+NOT the correct installation right now
+
 I recommend using a conda environment for installation.
 
 ```
@@ -33,7 +35,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```
-python3 decimer_workflow.py -folder path_to_directory_with_publications -c desired_confidence_value_to_split &> path_to_directory_with_publications/out.txt 2>&1
+python3 ~/DECIMER-workflow/decimer_workflow.py -folder path/to/directory/with/pdfs -d (which device to use, defaults to cpu) -m /path/to/molnextr/model
 ```
 
 ## Output
@@ -42,8 +44,8 @@ The segmented images, predicted images, and CSV files are stored in individual d
 
 ## Acknowledgements
 
-This script uses the DECIMER library for image segmentation (https://github.com/Kohulan/DECIMER-Image-Segmentation) and SMILES prediction (https://github.com/Kohulan/DECIMER-Image_Transformer).
+This script uses DECIMER for image segmentation (https://github.com/Kohulan/DECIMER-Image-Segmentation) and MolNexTR or DECIMER for SMILES prediction (https://github.com/CYF2000127/MolNexTR, https://github.com/Kohulan/DECIMER-Image_Transformer).
 
 ## License
 
-This project is licensed under the MIT LICENSE - See the file for details
+This project is licensed under the MIT LICENSE - See the [LICENSE file](./LICENSE) for details
