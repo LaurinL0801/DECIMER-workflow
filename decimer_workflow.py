@@ -72,10 +72,6 @@ def create_parser():
         >>> args = create_parser()
         >>> print(args.folder)
 
-        To set a confidence value for splitting:
-        >>> args = create_parser()
-        >>> print(args.c)
-
     Command-line Usage:
         Use either -f to run the script on a single file or -folder to run the script on all
         PDF files in a folder.
@@ -89,12 +85,10 @@ def create_parser():
     )
     parser.add_argument("-f", help="Input relative or absolute path of a publication")
     parser.add_argument("-folder", help="Enter a path to a folder")
-    parser.add_argument(
-        "-c", help="Enter a value at which the confidences will be split"
-    )
-    parser.add_argument(
-        "-m", help="Type '-hand_drawn True' if you want to use the HandDrawn model"
-    )
+
+    parser.add_argument("-p", help="Which prediction model to use, defaults to DECIMER")
+    parser.add_argument("-m", help="Specify the path to the MolNexTR get_model")
+    parser.add_argument("-d", help="Specify the device to use (default: cpu)")
     args = parser.parse_args()
     return args
 
@@ -116,44 +110,6 @@ def get_filepath(args: argparse.Namespace) -> str:
     """
     publication = args.f
     return publication
-
-
-def get_conf_value(args: argparse.Namespace) -> str:
-    """Extracts the confidence value from the argument.
-
-    Args:
-        args (argparse.Namespace): The parsed command-line arguments.
-
-    Returns:
-        str: The confidence value given as an argument.
-
-    Example:
-        >>> args = create_parser()
-        >>> conf_value = get_conf_value(args)
-        >>> print(conf_value)
-        '0.5'
-    """
-    confidence_value = args.c
-    return confidence_value
-
-
-def get_model(args: argparse.Namespace) -> bool:
-    """Checks whether you want to use the hand drawn model.
-
-    Args:
-        args (argparse.Namespace): The parsed command-line arguments.
-
-    Returns:
-        bool: True if you want to use the HandDrawn model.
-
-    Example:
-
-    """
-    if args.m == "True":
-        HandDrawn = True
-    else:
-        HandDrawn = False
-    return HandDrawn
 
 
 def get_list_of_files(args: argparse.Namespace) -> Tuple[List[str], str]:
@@ -282,38 +238,29 @@ def get_segments(filepath: str) -> None:
                 out_img.save(out_img_path, "PNG")
 
 
-def find_markush(smiles: str) -> bool:
-    """Determine if a given SMILES string contains characteristics indicative of a Markush structure.
-    Valid characters following R are for elements from the periodic table that start with R.
-
+def get_molnextr_inp(args: argparse.Namespace):
+    """Retrieve the path to the MolNexTR model and which device to use.
     Args:
-        smiles (str): The SMILES string to analyze.
-
+        args (argparse.Namespace): The parsed command-line arguments.
     Returns:
-        bool: True if the SMILES string contains Markush structure indicators, otherwise False.
-
+        str: The path to the MolNexTR model.
     Example:
-        >>> find_markush("C1CCC(CC1)R2")
-        True
-        >>> find_markush("CCO")
-        False
+        >>> args = create_parser()
+        >>> model_path = get_model_path(args)
+        >>> print(model_path)
+        'path/to/model.pth'
     """
-    valid_characters_after_R = ["a", "b", "e", "f", "g", "h", "n", "u"]
-    next_chars = []
-    for idx, char in enumerate(smiles):
-        if char == "R":
-            if idx + 1 < len(smiles):
-                next_char = smiles[idx + 1]
-                next_chars.append(next_char)
-            else:
-                return True
-    if next_chars and any(char not in valid_characters_after_R for char in next_chars):
-        return True
-    if "X" in smiles or "Y" in smiles or "Z" in smiles:
-        return True
+    model_path = args.m
+    device = args.d
+    if device is None:
+        device = "cpu"
+    if model_path:
+        return model_path, device
+    else:
+        return "Please specify the path to the MolNexTR model."
 
 
-def get_smiles_with_avg_confidence(filepath: str, HandDrawn: bool) -> None:
+def get_smiles_with_DECIMER(filepath: str) -> List:
     """Predict SMILES and average confidence for segmented images in subdirectories.
 
     This function takes the path to a PDF file, loops through the affiliated directory with each subdirectory,
@@ -342,15 +289,12 @@ def get_smiles_with_avg_confidence(filepath: str, HandDrawn: bool) -> None:
         for im in os.listdir(newdirpath):
             im_path = os.path.join(newdirpath, im)
             if im_path.endswith(".png"):
-                _, smiles_with_confidence = predict_SMILES(
-                    im_path, confidence=True, hand_drawn=HandDrawn
-                )
-                smiles_characters = [item[0] for item in smiles_with_confidence]
+                _, smiles = predict_SMILES(im_path)
+                smiles_characters = [item[0] for item in smiles]
                 smiles = "".join(smiles_characters)
                 smiles_list.append(smiles)
-                confidence_list = [item[1] for item in smiles_with_confidence]
-                avg_confidence = mean(confidence_list)
-                data = [[smiles], [avg_confidence]]
+                confidence_list = [item[1] for item in smiles]
+                data = [[smiles]]
                 csv_path = f"{im_path[:-13]}predicted.csv"
                 with open(csv_path, "w", encoding="UTF-8") as csvfile:
                     csv_writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
@@ -362,34 +306,6 @@ def get_smiles_with_avg_confidence(filepath: str, HandDrawn: bool) -> None:
                 except ValueError:
                     pass
     return smiles_list
-
-
-def check_markush(filepath: str, smiles_list: list, markush_path: str) -> bool:
-    """Check if any SMILES in a list exhibit Markush structure characteristics and move the corresponding file.
-
-    This function checks each SMILES string in the provided list for characteristics indicative of a Markush structure
-    using the `find_markush` function. If any SMILES is identified as a Markush structure, the function moves the
-    corresponding file to a specified directory and deletes the directory containing the file.
-
-    Args:
-        filepath (str): The path to the file being checked.
-        smiles_list (list): A list of SMILES strings to be checked for Markush structure characteristics.
-        markush_path (str): The directory path where files identified as Markush structures will be moved.
-
-    Returns:
-        bool: True if any SMILES in the list exhibit Markush structure characteristics and the file is moved,
-              otherwise False.
-
-    Example:
-        >>> check_markush("path/to/file.pdf", ["C1CCC(CC1)R2", "CCO"], "path/to/markush_files")
-        True
-    """
-    filename = Path(filepath).stem
-    bool_list = list(map(find_markush, smiles_list))
-    if True in bool_list:
-        shutil.move(filepath, os.path.join(markush_path, f"{filename}.pdf"))
-        shutil.rmtree(filepath[:-4])
-        return True
 
 
 def create_output_dictionary(filepath: str, doi: str) -> dict:
@@ -441,11 +357,9 @@ def create_output_dictionary(filepath: str, doi: str) -> dict:
                         for row in csv_reader:
                             csv_contents.append(row)
                         smiles = csv_contents[0]
-                        confidence = csv_contents[1]
                         im_id = Path(newfilepath).stem
                         key = im_id[:-10]
                         im_dict[key] = smiles
-                        im_dict[key].append(confidence)
                         output_dict[doi].update(im_dict)
     return output_dict
 
@@ -501,17 +415,13 @@ def create_output_csv(filepath: str, output_dict: dict) -> tuple:
         second_level_keys = list(output_dict[first_level_key].keys())
         for second_level_key in second_level_keys:
             smiles = output_dict[first_level_key][second_level_key][0]
-            confidence_score = output_dict[first_level_key][second_level_key][1][0]
-            data_rows.append(
-                [first_level_key, second_level_key, smiles, confidence_score]
-            )
+            data_rows.append([first_level_key, second_level_key, smiles])
     df_doi_imid_smiles_conf = pd.DataFrame(
         data_rows,
         columns=[
             "DOI/Filename",
             "Image ID",
             "Predicted Smiles",
-            "Avg Confidence Score",
         ],
     )
     df_doi_imid_smiles_conf["sort_key"] = df_doi_imid_smiles_conf["Image ID"].apply(
@@ -629,12 +539,8 @@ def create_pdf(filepath: str, output_df_with_errors_and_pred_im: pd.DataFrame) -
             predicted_image_path = os.path.join(subdirpath, predicted_image_name)
             if os.path.exists(predicted_image_path):
                 pdf.image(predicted_image_path, x=120, y=60, w=100)
-            if row["Avg Confidence Score"]:
-                pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
         else:
             pdf.cell(0, 10, txt=predicted_image_name, ln=True)
-            if row["Avg Confidence Score"]:
-                pdf.cell(0, 10, txt=row["Avg Confidence Score"], ln=True)
     file_name = os.path.join(dirpath, "output.pdf")
     pdf.output(file_name)
 
@@ -723,71 +629,6 @@ def concatenate_csv_files(
     merged_wo_col0 = merged_data.iloc[:, 1:]
     merged_wo_col0.to_csv(output_file_path, index=True)
     return output_file_path
-
-
-def split_good_bad(csv_path: str, value: float = 0.9) -> None:
-    """Split a CSV based on confidence scores.
-
-    This function reads a CSV file containing confidence scores and splits it into two CSV files:
-    one for confidence scores greater than or equal to a specified value, and one for scores below the value.
-
-    Args:
-        csv_path (str): Path to the CSV file containing confidence scores.
-        value (float, optional): Threshold value for confidence scores. Defaults to 0.9.
-
-    Returns:
-        None
-
-    Example:
-        >>> split_good_bad('path/to/confidence_scores.csv', value=0.8)
-
-        This will split the CSV file into two based on confidence scores (good and bad) and create new CSV files.
-    """
-    merged_file = pd.read_csv(csv_path)
-    path = Path(csv_path)
-    parent_path = path.parent.absolute()
-    good = merged_file.loc[merged_file["Avg Confidence Score"] >= value]
-    bad = merged_file.loc[merged_file["Avg Confidence Score"] < value]
-    output_path_good = os.path.join(parent_path, f"avg_conf_higher_than_{value}.csv")
-    output_path_bad = os.path.join(parent_path, f"avg_conf_lower_than_{value}.csv")
-    good.to_csv(output_path_good)
-    bad.to_csv(output_path_bad)
-    return output_path_good
-
-
-def create_final_output(output_good: str) -> str:
-    """Filter and clean a CSV file to create a final output CSV.
-
-    This function reads a CSV file, removes rows with specific errors, drops unnecessary columns,
-    and creates a final cleaned CSV file.
-
-    Args:
-        output_good (str): Path to the input CSV file containing the 'good' data.
-
-    Returns:
-        str: Filepath of the final cleaned CSV file.
-
-    Example:
-        >>> create_final_output('path/to/avg_conf_higher_than_0.9.csv')
-
-        This will filter the input CSV and create 'final_extraction.csv' in the same directory.
-    """
-    path = Path(output_good)
-    parent_path = path.parent.absolute()
-    df_final = pd.read_csv(output_good)
-    df_final["SMILES Error"] = df_final["SMILES Error"].astype(str)
-    df_final = df_final[~df_final["SMILES Error"].str.contains("SMILES Parse")]
-    columns_to_drop = [
-        "Unnamed: 0.1",
-        "Unnamed: 0",
-        "Avg Confidence Score",
-        "SMILES Error",
-    ]
-    df_final_filtered = df_final.drop(columns_to_drop, axis=1)
-
-    out_final_csv = os.path.join(parent_path, "final_extraction.csv")
-    df_final_filtered.to_csv(out_final_csv, index=True, index_label="Index")
-    return out_final_csv
 
 
 def move_pdf(filepath: str) -> None:
@@ -892,13 +733,6 @@ def main():
     """
     args = create_parser()
     pdf_list, directory = get_list_of_files(args)
-    #markush_path = os.path.join(directory, "markush_structures")
-   # os.makedirs(markush_path, exist_ok=True)
-    conf_value = get_conf_value(args)
-    model = get_model(args)
-    if conf_value is None:
-        conf_value = 0.9
-    conf_value = float(conf_value)
     abs_path_input = os.path.abspath(directory)
     output_name = [f for f in os.listdir(directory) if f.endswith(".txt")]
     terminal_output = os.path.join(abs_path_input, output_name[0])
@@ -911,26 +745,21 @@ def main():
         create_output_directory(pdf)
         get_single_pages(pdf)
         get_segments(pdf)
-        smiles_list = get_smiles_with_avg_confidence(pdf, model)
-        #val = check_markush(pdf, smiles_list, markush_path)
-        #if val:
-        #    pass
-        #else:
+        if args.p == "molnextr":
+            model, device = get_molnextr_inp(args)
+            smiles_list = get_smiles_with_molnextr(pdf, model, device)
+        else:
+            smiles_list = get_smiles_with_DECIMER(pdf)
         out_dict = create_output_dictionary(pdf, doi)
         df_doi_imid_smiles_conf, out_csv_path = create_output_csv(pdf, out_dict)
         output_df_with_errors = get_parse_error(
             df_doi_imid_smiles_conf, out_csv_path, terminal_output
         )
-        output_df_with_errors_and_pred_im = get_predicted_images(
-            output_df_with_errors
-        )
+        output_df_with_errors_and_pred_im = get_predicted_images(output_df_with_errors)
         create_pdf(pdf, output_df_with_errors_and_pred_im)
         move_pdf(pdf)
         current_time = extract_absolute_times()
         time_list.append(current_time)
-    csv_path = concatenate_csv_files(abs_path_input, output_file="merged_output.csv")
-    output_path_good = split_good_bad(csv_path, conf_value)
-    create_final_output(output_path_good)
     get_time_per_publication(abs_path_input, time_list, pdf_list)
 
 
