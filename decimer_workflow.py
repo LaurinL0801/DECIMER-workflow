@@ -282,11 +282,9 @@ def get_molnextr_inp(args: argparse.Namespace):
 def get_smiles_with_molnextr(filepath: str) -> dict:
     smiles_dict = {}
     segments_dir = os.path.join(os.path.splitext(filepath), "segments")
-    print(segments_dir)
 
     for img in os.listdir(segments_dir):
         img_name = "_".join(os.path.basename(img).split("_")[:3])
-        print(img)
         img_path = os.path.join(f"{segments_dir}", img)
         smiles = MolNexTR.get_predictions(
             img_path, atoms_bonds=False, smiles=True, predicted_molfile=False
