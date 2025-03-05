@@ -54,6 +54,8 @@ from decimer_segmentation import segment_chemical_structures_from_file
 from fpdf import FPDF
 from pdf2doi import pdf2doi
 
+import MolNexTR
+
 
 def create_parser():
     """Create an ArgumentParser for processing PDF and .smi files.
@@ -240,18 +242,18 @@ def get_segments(filepath: str) -> None:
 
 def copy_segments(filepath: str) -> None:
     directory = filepath[:-4]
-    
+
     segments_dir = os.path.join(directory, "segments")
     os.makedirs(segments_dir, exist_ok=True)
     for root, _, files in os.walk(directory):
-        if root ==segments_dir:
+        if root == segments_dir:
             continue
 
         for file in files:
             if file.endswith("segmented.png"):
                 imgpath = os.path.join(root, file)
                 imgname = os.path.basename(imgpath)
-                copied_path = os.path.join(segments_dir,imgname)
+                copied_path = os.path.join(segments_dir, imgname)
                 shutil.copyfile(imgpath, copied_path)
 
 
@@ -275,6 +277,23 @@ def get_molnextr_inp(args: argparse.Namespace):
         return model_path, device
     else:
         return "Please specify the path to the MolNexTR model."
+
+
+def get_smiles_with_molnextr(filepath: str) -> dict:
+    smiles_dict = {}
+    segments_dir = os.path.join(os.path.splitext(filepath), "segments")
+    print(segments_dir)
+
+    for img in os.listdir(segments_dir):
+        img_name = "_".join(os.path.basename(img).split("_")[:3])
+        print(img)
+        img_path = os.path.join(f"{segments_dir}", img)
+        smiles = MolNexTR.get_predictions(
+            img_path, atoms_bonds=False, smiles=True, predicted_molfile=False
+        )
+
+        smiles_dict[img_name] = smiles
+    return smiles_dict
 
 
 def get_smiles_with_DECIMER(filepath: str) -> List:
